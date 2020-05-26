@@ -17,12 +17,14 @@ from sklearn.base import TransformerMixin
 from scipy.fftpack import fft
 from datetime import datetime, timedelta
 
+
 class Transformer(TransformerMixin):
     """
     Base class of tranformers
     """
+
     def __init__(self):
-        self.features = 0 #number of output features or desired number of features
+        self.features = 0  # number of output features or desired number of features
 
     def transform(self, input):
         """
@@ -41,7 +43,6 @@ class Transformer(TransformerMixin):
 
 
 class FourierCoef(Transformer):
-
     def __init__(self, start_idx, num_features):
 
         """
@@ -61,16 +62,28 @@ class FourierCoef(Transformer):
         """
 
         # FFT by default computes over the last axis.
-        ranges = np.r_[0,self.start_idx:self.start_idx + self.num_features - 1].astype(int)
-        assert(len(ranges) == self.num_features)
+        ranges = np.r_[
+            0, self.start_idx : self.start_idx + self.num_features - 1
+        ].astype(int)
+        assert len(ranges) == self.num_features
         fft_time_series = fft(time_series)[ranges]
 
-        #Only interested in magnitude! not in phase in this case
+        # Only interested in magnitude! not in phase in this case
         return np.abs(fft_time_series)
 
+
 # Other transformers
-def post_process_timeseries(num_of_points, start_datetime, time_series, start_idx, num_features, period_length_days=1):
-    dataset_imputed, coverage = _impute(num_of_points, period_length_days, start_datetime, time_series)
+def post_process_timeseries(
+    num_of_points,
+    start_datetime,
+    time_series,
+    start_idx,
+    num_features,
+    period_length_days=1,
+):
+    dataset_imputed, coverage = _impute(
+        num_of_points, period_length_days, start_datetime, time_series
+    )
 
     # if imputing fails, we can't do fft either
     if dataset_imputed is None:
@@ -80,6 +93,7 @@ def post_process_timeseries(num_of_points, start_datetime, time_series, start_id
     coefs = fourier.transform(dataset_imputed)
 
     return coefs, coverage
+
 
 # temporary until filling nulls is enabled in prod api
 def _fill_in_blank_days(num_of_points, start_datetime, pulled_dataset):
@@ -99,15 +113,18 @@ def _fill_in_blank_days(num_of_points, start_datetime, pulled_dataset):
     for day_idx in range(0, num_of_points):
         curr_idx_date = (start_datetime + timedelta(days=day_idx)).isoformat() + ".000Z"
 
-        if ptr_idx_incomplete_list >= len(pulled_dataset) or pulled_dataset[ptr_idx_incomplete_list][
-            "start_date"] != curr_idx_date:
+        if (
+            ptr_idx_incomplete_list >= len(pulled_dataset)
+            or pulled_dataset[ptr_idx_incomplete_list]["start_date"] != curr_idx_date
+        ):
             # add null entry at this point for later imputation.
-            dataset[day_idx] = float('NaN')
+            dataset[day_idx] = float("NaN")
         else:
             dataset[day_idx] = pulled_dataset[ptr_idx_incomplete_list]["value"]
             ptr_idx_incomplete_list += 1
 
     return dataset
+
 
 def _impute(num_of_points, period_length_days, start_datetime, pulled_dataset):
     x_output = np.arange(0, period_length_days * num_of_points, period_length_days)
@@ -119,7 +136,10 @@ def _impute(num_of_points, period_length_days, start_datetime, pulled_dataset):
 
     for datapoint in pulled_dataset:
         if datapoint["value"] is not None:
-            delta = (datetime.strptime(datapoint["start_date"][0:10], "%Y-%m-%d").date() - start_datetime.date()).days
+            delta = (
+                datetime.strptime(datapoint["start_date"][0:10], "%Y-%m-%d").date()
+                - start_datetime.date()
+            ).days
             x_input.append(delta)
             y_input.append(datapoint["value"])
             num_of_valid_points_pulled_dataset += 1
@@ -132,4 +152,3 @@ def _impute(num_of_points, period_length_days, start_datetime, pulled_dataset):
     coverage = float(num_of_valid_points_pulled_dataset) / num_of_points
 
     return y_output, coverage
-

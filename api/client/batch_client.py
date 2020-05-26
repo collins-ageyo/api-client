@@ -21,25 +21,31 @@ from api.client.lib import APIError
 
 class BatchError(APIError):
     """Replicate the APIError interface given a Tornado HTTPError."""
+
     def __init__(self, response, retry_count, url, params):
         self.response = response
         self.retry_count = retry_count
         self.url = url
         self.params = params
-        self.status_code = self.response.code if hasattr(self.response, 'code') else None
+        self.status_code = (
+            self.response.code if hasattr(self.response, "code") else None
+        )
         try:
             json_content = json_decode(self.response.body)
             # 'error' should be something like 'Not Found' or 'Bad Request'
-            self.message = json_content.get('error', '')
+            self.message = json_content.get("error", "")
             # Some error responses give additional info.
             # For example, a 400 Bad Request might say "metricId is required"
-            if 'message' in json_content:
-                self.message += ': {}'.format(json_content['message'])
+            if "message" in json_content:
+                self.message += ": {}".format(json_content["message"])
         except Exception:
             # If the error message can't be parsed, fall back to a generic "giving up" message.
-            self.message = 'Giving up on {} after {} {}: {}'.format(self.url, self.retry_count,
-                                                                    'retry' if self.retry_count == 1
-                                                                    else 'retries', response)
+            self.message = "Giving up on {} after {} {}: {}".format(
+                self.url,
+                self.retry_count,
+                "retry" if self.retry_count == 1 else "retries",
+                response,
+            )
 
 
 class BatchClient(GroClient):
@@ -60,9 +66,9 @@ class BatchClient(GroClient):
         def log_request(start_time, retry_count, msg, status_code):
             elapsed_time = time.time() - start_time
             log_record = dict(base_log_record)
-            log_record['elapsed_time_in_ms'] = 1000 * elapsed_time
-            log_record['retry_count'] = retry_count
-            log_record['status_code'] = status_code
+            log_record["elapsed_time_in_ms"] = 1000 * elapsed_time
+            log_record["retry_count"] = retry_count
+            log_record["status_code"] = status_code
             if status_code == 200:
                 self._logger.debug(msg, extra=log_record)
             else:
@@ -82,28 +88,38 @@ class BatchClient(GroClient):
         while retry_count <= cfg.MAX_RETRIES:
             retry_count += 1
             start_time = time.time()
-            http_request = HTTPRequest('{url}?{params}'.format(url=url, params=urlencode(params)),
-                                       method="GET",
-                                       headers=headers,
-                                       request_timeout=cfg.TIMEOUT,
-                                       connect_timeout=cfg.TIMEOUT)
+            http_request = HTTPRequest(
+                "{url}?{params}".format(url=url, params=urlencode(params)),
+                method="GET",
+                headers=headers,
+                request_timeout=cfg.TIMEOUT,
+                connect_timeout=cfg.TIMEOUT,
+            )
             try:
                 try:
                     response = yield self._http_client.fetch(http_request)
                     status_code = response.code
                 except HTTPError as e:
                     # Catch non-200 codes that aren't errors
-                    status_code = e.code if hasattr(e, 'code') else None
+                    status_code = e.code if hasattr(e, "code") else None
                     if status_code in [204, 206]:
-                        log_msg = {204: 'No Content', 206: 'Partial Content'}[status_code]
+                        log_msg = {204: "No Content", 206: "Partial Content"}[
+                            status_code
+                        ]
                         response = e.response
                         log_request(start_time, retry_count, log_msg, status_code)
                         # Do not retry.
                     elif status_code == 301:
-                        redirected_ids = json.loads(e.response.body.decode("utf-8"))['data'][0]
+                        redirected_ids = json.loads(e.response.body.decode("utf-8"))[
+                            "data"
+                        ][0]
                         new_params = lib.redirect(params, redirected_ids)
-                        log_request(start_time, retry_count,
-                                    'Redirecting {} to {}'.format(params, new_params), status_code)
+                        log_request(
+                            start_time,
+                            retry_count,
+                            "Redirecting {} to {}".format(params, new_params),
+                            status_code,
+                        )
                         params = new_params
                         continue  # retry
                     else:  # Otherwise, propagate to error handling
@@ -111,10 +127,13 @@ class BatchClient(GroClient):
             except Exception as e:
                 # HTTPError raised when there's a non-200 status code
                 # socket.gaio error raised when there's a connection error
-                response = e.response if hasattr(e, 'response') else e
-                status_code = e.code if hasattr(e, 'code') else None
-                error_msg = e.response.error if (hasattr(e, 'response') and
-                                                 hasattr(e.response, 'error')) else e
+                response = e.response if hasattr(e, "response") else e
+                status_code = e.code if hasattr(e, "code") else None
+                error_msg = (
+                    e.response.error
+                    if (hasattr(e, "response") and hasattr(e.response, "error"))
+                    else e
+                )
                 log_request(start_time, retry_count, error_msg, status_code)
                 if status_code in [429, 500, 503, 504]:
                     # First retry is immediate.
@@ -126,8 +145,10 @@ class BatchClient(GroClient):
                     break  # Do not retry. Go right to raising an Exception.
 
             # Request was successful
-            log_request(start_time, retry_count, 'OK', status_code)
-            raise gen.Return(json_decode(response.body) if hasattr(response, 'body') else None)
+            log_request(start_time, retry_count, "OK", status_code)
+            raise gen.Return(
+                json_decode(response.body) if hasattr(response, "body") else None
+            )
 
         # Retries failed. Raise exception
         raise BatchError(response, retry_count, url, params)
@@ -135,29 +156,34 @@ class BatchClient(GroClient):
     def get_df(self, show_revisions=True):
         if show_revisions:
             for data_series in self._data_series_queue:
-                data_series['show_revisions'] = True
-        self.batch_async_get_data_points(self._data_series_queue,
-                                         output_list=self._data_frame,
-                                         map_result=self.add_points_to_df)
+                data_series["show_revisions"] = True
+        self.batch_async_get_data_points(
+            self._data_series_queue,
+            output_list=self._data_frame,
+            map_result=self.add_points_to_df,
+        )
         return self._data_frame
 
     # TODO: deprecate  the following  two methods, standardize  on one
     # approach with get_data_points and get_df
     @gen.coroutine
     def get_data_points_generator(self, **selection):
-        headers = {'authorization': 'Bearer ' + self.access_token}
-        url = '/'.join(['https:', '', self.api_host, 'v2/data'])
+        headers = {"authorization": "Bearer " + self.access_token}
+        url = "/".join(["https:", "", self.api_host, "v2/data"])
         params = lib.get_data_call_params(**selection)
         try:
             list_of_series_points = yield self.get_data(url, headers, params)
-            include_historical = selection.get('include_historical', True)
-            points = lib.list_of_series_to_single_series(list_of_series_points, False,
-                                                         include_historical)
+            include_historical = selection.get("include_historical", True)
+            points = lib.list_of_series_to_single_series(
+                list_of_series_points, False, include_historical
+            )
             raise gen.Return(points)
         except BatchError as b:
             raise gen.Return(b)
 
-    def batch_async_get_data_points(self, batched_args, output_list=None, map_result=None):
+    def batch_async_get_data_points(
+        self, batched_args, output_list=None, map_result=None
+    ):
         """Make many :meth:`~get_data_points` requests asynchronously.
 
         Parameters
@@ -220,8 +246,9 @@ class BatchClient(GroClient):
                 ]
 
         """
-        return self.batch_async_queue(self.get_data_points_generator, batched_args, output_list,
-                                      map_result)
+        return self.batch_async_queue(
+            self.get_data_points_generator, batched_args, output_list, map_result
+        )
 
     @gen.coroutine
     def async_rank_series_by_source(self, *selections_list):
@@ -229,8 +256,9 @@ class BatchClient(GroClient):
         response = super(BatchClient, self).rank_series_by_source(selections_list)
         raise gen.Return(list(response))
 
-    def batch_async_rank_series_by_source(self, batched_args,
-                                          output_list=None, map_result=None):
+    def batch_async_rank_series_by_source(
+        self, batched_args, output_list=None, map_result=None
+    ):
         """Perform multiple rank_series_by_source requests asynchronously.
 
         Parameters
@@ -239,8 +267,9 @@ class BatchClient(GroClient):
             See :meth:`~.rank_series_by_source` `selections_list`. A list of those lists.
 
         """
-        return self.batch_async_queue(self.async_rank_series_by_source, batched_args,
-                                      output_list, map_result)
+        return self.batch_async_queue(
+            self.async_rank_series_by_source, batched_args, output_list, map_result
+        )
 
     def batch_async_queue(self, func, batched_args, output_list, map_result):
         """Asynchronously call func.
@@ -265,8 +294,9 @@ class BatchClient(GroClient):
             4. `output_list`. The accumulator of all results
 
         """
-        assert type(batched_args) is list, \
-            "Only argument to a batch async decorated function should be a \
+        assert (
+            type(batched_args) is list
+        ), "Only argument to a batch async decorated function should be a \
             list of a list of the individual non-keyword arguments being \
             passed to the original function."
 
@@ -274,9 +304,9 @@ class BatchClient(GroClient):
         # In Python 3, can accomplish the same thing with `nonlocal` keyword.
         output_data = {}
         if output_list is None:
-            output_data['result'] = [0] * len(batched_args)
+            output_data["result"] = [0] * len(batched_args)
         else:
-            output_data['result'] = output_list
+            output_data["result"] = output_list
 
         if not map_result:
             # Default map_result function separates output by index of the query. For example:
@@ -295,7 +325,7 @@ class BatchClient(GroClient):
             while q.qsize():
                 try:
                     idx, item = q.get().result()
-                    self._logger.debug('Doing work on {}'.format(idx))
+                    self._logger.debug("Doing work on {}".format(idx))
                     if type(item) is dict:
                         # Assume that dict types should be unpacked as kwargs
                         result = yield func(**item)
@@ -304,8 +334,10 @@ class BatchClient(GroClient):
                         result = yield func(*item)
                     else:
                         result = yield func(item)
-                    output_data['result'] = map_result(idx, item, result, output_data['result'])
-                    self._logger.debug('Done with {}'.format(idx))
+                    output_data["result"] = map_result(
+                        idx, item, result, output_data["result"]
+                    )
+                    self._logger.debug("Done with {}".format(idx))
                     q.task_done()
                 except Exception:
                     # Cease processing
@@ -331,4 +363,4 @@ class BatchClient(GroClient):
 
         IOLoop.current().run_sync(main)
 
-        return output_data['result']
+        return output_data["result"]
